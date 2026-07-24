@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Potter Graph — an entity map of Harry Potter, books 1–4</title>
+<style>
+  :root {
+    --bg: #0e0f1c;
+    --panel: #191a2b;
+    --panel-2: #21223a;
+    --line: #2c2d47;
+    --ink: #e9e9f4;
+    --muted: #9a9ab8;
+    --gold: #f2c14e;
+    --character: #f2c14e;
+    --spell: #6fb7ff;
+    --place: #63e6a4;
+    --creature: #ff8fab;
+    --house: #c39bff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 22px 26px 18px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #14152a, #0e0f1c);
+  }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  header h1 span { color: var(--gold); }
+  header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+  .stats { margin-top: 14px; display: flex; gap: 26px; flex-wrap: wrap; }
+  .stat b { display: block; font-size: 20px; color: var(--gold); }
+  .stat span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+
+  .layout { display: grid; grid-template-columns: 250px 1fr 300px; height: calc(100vh - 132px); }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; height: auto; } }
+
+  .col { overflow-y: auto; padding: 16px; }
+  .controls { border-right: 1px solid var(--line); }
+  .detail { border-left: 1px solid var(--line); }
+  .stage { position: relative; }
+  #graph { display: block; width: 100%; height: 100%; cursor: grab; }
+  #graph:active { cursor: grabbing; }
+
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 18px 0 8px; }
+  h2:first-child { margin-top: 0; }
+
+  label.check { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
+  label.check .dot { width: 11px; height: 11px; border-radius: 50%; }
+  input[type="range"] { width: 100%; accent-color: var(--gold); }
+  select, input[type="search"] {
+    width: 100%; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 9px; font-size: 14px;
+  }
+  .rowval { color: var(--muted); font-size: 12px; float: right; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .card.headline { border-color: var(--gold); background: linear-gradient(180deg, #241f14, var(--panel)); }
+  .card h3 { margin: 0 0 5px; font-size: 14px; }
+  .card.headline h3::before { content: "★ "; color: var(--gold); }
+  .card p { margin: 0; font-size: 13px; color: var(--muted); }
+
+  .insights { padding: 16px 26px; border-bottom: 1px solid var(--line); display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+  .bars .bar { margin: 6px 0; }
+  .bars .bar .lab { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 3px; }
+  .bars .bar .track { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .bars .bar .fill { height: 100%; background: var(--gold); border-radius: 4px; }
+
+  .tip { position: absolute; pointer-events: none; background: #000c; border: 1px solid var(--line);
+    padding: 4px 8px; border-radius: 6px; font-size: 12px; display: none; white-space: nowrap; }
+
+  .detail .big { font-size: 18px; font-weight: 600; }
+  .detail .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; color: #10111f; font-weight: 600; }
+  .kv { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .kv span { color: var(--muted); }
+  .neighbour { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+  .neighbour em { color: var(--muted); font-style: normal; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .legend-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  footer { padding: 14px 26px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
+  a { color: var(--spell); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>⚡</span> Potter Graph <span style="color:var(--muted);font-weight:400">— entities & relations, books 1–4</span></h1>
+  <p id="subtitle">A network mined straight from the text of the first four Harry Potter books.
+     Nodes are characters, spells, places, creatures and houses; links mean they turn up in the same sentence.</p>
+  <div class="stats" id="stats"></div>
+</header>
+
+<section class="insights" id="insights"></section>
+
+<div class="layout">
+  <aside class="col controls">
+    <h2>Colour nodes by</h2>
+    <select id="colorMode">
+      <option value="type">Entity type</option>
+      <option value="community">Community (Louvain)</option>
+    </select>
+
+    <h2>Show types</h2>
+    <div id="typeFilters"></div>
+
+    <h2>Book</h2>
+    <select id="bookFilter">
+      <option value="0">All four books</option>
+    </select>
+
+    <h2>Min. link strength <span class="rowval" id="minWeightVal">1</span></h2>
+    <input type="range" id="minWeight" min="1" max="30" value="3" />
+
+    <h2>Find a node</h2>
+    <input type="search" id="search" placeholder="e.g. Dobby, Lumos, Azkaban" />
+    <p class="legend-note">Drag to pan · scroll to zoom · click a node for details.</p>
+  </aside>
+
+  <div class="col stage" style="padding:0">
+    <canvas id="graph"></canvas>
+    <div class="tip" id="tip"></div>
+  </div>
+
+  <aside class="col detail">
+    <div id="detail">
+      <p class="hint">Click any node to inspect it — mentions, words spoken, its community and who it shares scenes with.</p>
+    </div>
+
+    <h2>Top talkers <span class="rowval">words spoken</span></h2>
+    <div class="bars" id="chart-talkers"></div>
+    <h2>Most-named spells</h2>
+    <div class="bars" id="chart-spells"></div>
+    <h2>Social bridges <span class="rowval">betweenness</span></h2>
+    <div class="bars" id="chart-central"></div>
+    <h2>Busiest wands <span class="rowval">casts</span></h2>
+    <div class="bars" id="chart-casters"></div>
+  </aside>
+</div>
+
+<footer>
+  Built from the plain text of books 1–4. Extraction is gazetteer-based (high precision, bounded recall);
+  co-occurrence links and spell-casting are heuristics — see <code>DESIGN.md</code>. Dialogue attribution
+  covered <b id="attrib"></b> of spoken lines.
+</footer>
+
+<script src="data.js"></script>
+<script>
+const D = window.DATA;
+const TYPES = ["character", "spell", "place", "creature", "house"];
+const TYPE_COLOR = {
+  character: "#f2c14e", spell: "#6fb7ff", place: "#63e6a4", creature: "#ff8fab", house: "#c39bff",
+};
+const nodeById = new Map(D.nodes.map(n => [n.id, n]));
+
+// ---- header stats ----
+const pct = (D.meta.quotesAttributed / D.meta.quotesSeen * 100).toFixed(0);
+document.getElementById("attrib").textContent = pct + "%";
+const statDefs = [
+  [D.nodes.length, "entities"],
+  [D.links.filter(l => l.type === "cooccurs").length, "co-occurrence links"],
+  [D.meta.totalMentions.toLocaleString(), "total mentions"],
+  [new Set(D.nodes.map(n => n.community)).size, "communities"],
+];
+document.getElementById("stats").innerHTML = statDefs
+  .map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+
+// ---- insights ----
+document.getElementById("insights").innerHTML = D.insights.map(i =>
+  `<div class="card ${i.headline ? "headline" : ""}"><h3>${i.title}</h3><p>${i.body}</p></div>`).join("");
+
+// ---- book filter options ----
+const bf = document.getElementById("bookFilter");
+D.meta.books.forEach((name, i) =>
+  bf.insertAdjacentHTML("beforeend", `<option value="${i + 1}">${i + 1}. ${name}</option>`));
+
+// ---- type filter checkboxes ----
+const typeState = Object.fromEntries(TYPES.map(t => [t, true]));
+document.getElementById("typeFilters").innerHTML = TYPES.map(t =>
+  `<label class="check"><input type="checkbox" data-type="${t}" checked>
+     <span class="dot" style="background:${TYPE_COLOR[t]}"></span>${t}s</label>`).join("");
+
+// ---- charts ----
+function drawChart(elId, rows, color) {
+  const max = Math.max(...rows.map(r => r.value), 1);
+  document.getElementById(elId).innerHTML = rows.map(r => `
+    <div class="bar">
+      <div class="lab"><span>${r.name}</span><span>${r.value}</span></div>
+      <div class="track"><div class="fill" style="width:${(r.value / max * 100).toFixed(1)}%;background:${color}"></div></div>
+    </div>`).join("");
+}
+drawChart("chart-talkers", D.charts.topTalkers, TYPE_COLOR.character);
+drawChart("chart-spells", D.charts.topSpells, TYPE_COLOR.spell);
+drawChart("chart-central", D.charts.topCentral, TYPE_COLOR.character);
+drawChart("chart-casters", D.charts.topCasters, TYPE_COLOR.character);
+
+// ---- community colours (stable hue per community id) ----
+const commColor = id => `hsl(${(id * 47) % 360} 62% 62%)`;
+
+// =====================================================================
+//  Canvas force-graph. Positions are pre-computed (ForceAtlas2 at build
+//  time), so here we just fit-to-view, draw, and handle pan/zoom/picking.
+// =====================================================================
+const canvas = document.getElementById("graph");
+const ctx = canvas.getContext("2d");
+const tip = document.getElementById("tip");
+
+let view = { scale: 1, x: 0, y: 0 };   // world -> screen
+let selected = null, hovered = null;
+
+const xs = D.nodes.map(n => n.x), ys = D.nodes.map(n => n.y);
+const bounds = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+const sizeOf = n => 3 + Math.sqrt(n.mentions) * 0.7;   // area ~ mentions
+
+function resize() {
+  const r = canvas.parentElement.getBoundingClientRect();
+  canvas.width = r.width * devicePixelRatio;
+  canvas.height = r.height * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  fit();
+}
+function fit() {
+  const w = canvas.width / devicePixelRatio, h = canvas.height / devicePixelRatio;
+  const pad = 40;
+  const sx = (w - pad * 2) / (bounds.maxX - bounds.minX || 1);
+  const sy = (h - pad * 2) / (bounds.maxY - bounds.minY || 1);
+  view.scale = Math.min(sx, sy);
+  view.x = pad - bounds.minX * view.scale + (w - pad * 2 - (bounds.maxX - bounds.minX) * view.scale) / 2;
+  view.y = pad - bounds.minY * view.scale + (h - pad * 2 - (bounds.maxY - bounds.minY) * view.scale) / 2;
+  draw();
+}
+const toScreen = n => ({ x: n.x * view.scale + view.x, y: n.y * view.scale + view.y });
+
+function filters() {
+  const book = +document.getElementById("bookFilter").value;
+  const minW = +document.getElementById("minWeight").value;
+  const colorMode = document.getElementById("colorMode").value;
+  return { book, minW, colorMode };
+}
+const nodeVisible = (n, f) =>
+  typeState[n.type] && (f.book === 0 || n.books.includes(f.book));
+
+function colorFor(n, f) {
+  return f.colorMode === "community" ? commColor(n.community) : TYPE_COLOR[n.type];
+}
+
+function draw() {
+  const f = filters();
+  const w = canvas.width / devicePixelRatio, h = canvas.height / devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  // edges (co-occurrence only; casts live in the detail panel)
+  ctx.lineWidth = 1;
+  for (const l of D.links) {
+    if (l.type !== "cooccurs" || l.weight < f.minW) continue;
+    if (f.book !== 0 && !l.books.includes(f.book)) continue;
+    const a = nodeById.get(l.source), b = nodeById.get(l.target);
+    if (!nodeVisible(a, f) || !nodeVisible(b, f)) continue;
+    const hot = selected && (l.source === selected.id || l.target === selected.id);
+    const pa = toScreen(a), pb = toScreen(b);
+    ctx.strokeStyle = hot ? "rgba(242,193,78,.55)" : `rgba(150,150,190,${Math.min(0.06 + l.weight / 400, 0.3)})`;
+    ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+  }
+
+  // nodes
+  for (const n of D.nodes) {
+    if (!nodeVisible(n, f)) continue;
+    const p = toScreen(n), r = sizeOf(n);
+    const dim = selected && selected !== n && !areNeighbours(selected, n);
+    ctx.globalAlpha = dim ? 0.25 : 1;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
+    ctx.fillStyle = colorFor(n, f); ctx.fill();
+    if (n === selected || n === hovered) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+    if (r > 9 || n === selected) {
+      ctx.globalAlpha = dim ? 0.3 : 1;
+      ctx.fillStyle = "#e9e9f4"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(n.label, p.x, p.y - r - 3);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+const neighbourCache = new Map();
+function neighboursOf(n) {
+  if (neighbourCache.has(n.id)) return neighbourCache.get(n.id);
+  const set = new Set();
+  for (const l of D.links) {
+    if (l.type !== "cooccurs") continue;
+    if (l.source === n.id) set.add(l.target);
+    else if (l.target === n.id) set.add(l.source);
+  }
+  neighbourCache.set(n.id, set);
+  return set;
+}
+const areNeighbours = (a, b) => neighboursOf(a).has(b.id);
+
+// ---- picking ----
+function nodeAt(mx, my) {
+  const f = filters();
+  let best = null, bestD = 14;
+  for (const n of D.nodes) {
+    if (!nodeVisible(n, f)) continue;
+    const p = toScreen(n), d = Math.hypot(p.x - mx, p.y - my);
+    if (d < Math.max(sizeOf(n), 6) && d < bestD) { best = n; bestD = d; }
+  }
+  return best;
+}
+
+// ---- detail panel ----
+function neighbourRows(n) {
+  const rows = [];
+  for (const l of D.links) {
+    if (l.type !== "cooccurs") continue;
+    let other = l.source === n.id ? l.target : l.target === n.id ? l.source : null;
+    if (other) rows.push([nodeById.get(other).label, l.weight]);
+  }
+  return rows.sort((a, b) => b[1] - a[1]).slice(0, 8);
+}
+function spellRows(n) {
+  const rows = [];
+  for (const l of D.links) {
+    if (l.type !== "casts") continue;
+    if (n.type === "character" && l.source === n.id) rows.push([nodeById.get(l.target).label, l.weight]);
+    if (n.type === "spell" && l.target === n.id) rows.push([nodeById.get(l.source).label, l.weight]);
+  }
+  return rows.sort((a, b) => b[1] - a[1]).slice(0, 8);
+}
+const HINT = '<p class="hint">Click any node to inspect it — mentions, words spoken, its community and who it shares scenes with.</p>';
+function showDetail(n) {
+  if (!n) { document.getElementById("detail").innerHTML = HINT; return; }
+  const c = TYPE_COLOR[n.type];
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+  const spells = spellRows(n);
+  const spellLabel = n.type === "spell" ? "Cast by" : "Spells cast";
+  const html = `
+    <div class="big">${n.label}</div>
+    <div style="margin:6px 0 14px"><span class="pill" style="background:${c}">${n.type}</span></div>
+    ${kv("Mentions", n.mentions.toLocaleString())}
+    ${n.type === "character" ? kv("Words spoken", n.wordsSpoken.toLocaleString()) : ""}
+    ${kv("Connections", n.degree)}
+    ${kv("Betweenness", n.betweenness.toFixed(3))}
+    ${kv("Community", "#" + n.community)}
+    ${kv("Appears in books", n.books.join(", "))}
+    <h2>Shares scenes with</h2>
+    ${neighbourRows(n).map(([name, w]) =>
+      `<div class="neighbour"><span>${name}</span><em>${w}×</em></div>`).join("") || '<p class="hint">—</p>'}
+    ${spells.length ? `<h2>${spellLabel}</h2>` + spells.map(([name, w]) =>
+      `<div class="neighbour"><span>${name}</span><em>${w}×</em></div>`).join("") : ""}`;
+  document.getElementById("detail").innerHTML = html;
+}
+
+// ---- interaction ----
+let drag = null, down = null, moved = false;
+canvas.addEventListener("mousedown", e => { drag = { x: e.offsetX, y: e.offsetY }; down = { ...drag }; moved = false; });
+window.addEventListener("mouseup", () => { drag = null; });
+canvas.addEventListener("mousemove", e => {
+  if (drag) {
+    view.x += e.offsetX - drag.x; view.y += e.offsetY - drag.y;
+    drag = { x: e.offsetX, y: e.offsetY };
+    if (Math.hypot(e.offsetX - down.x, e.offsetY - down.y) > 4) moved = true;
+    draw(); return;
+  }
+  const n = nodeAt(e.offsetX, e.offsetY);
+  if (n !== hovered) { hovered = n; draw(); }
+  if (n) {
+    tip.style.display = "block"; tip.style.left = e.offsetX + 12 + "px"; tip.style.top = e.offsetY + 12 + "px";
+    tip.textContent = `${n.label} · ${n.mentions} mentions`;
+    canvas.style.cursor = "pointer";
+  } else { tip.style.display = "none"; canvas.style.cursor = "grab"; }
+});
+canvas.addEventListener("click", e => {
+  if (moved) return;
+  const n = nodeAt(e.offsetX, e.offsetY);
+  selected = n;
+  showDetail(n);
+  draw();
+});
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const k = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  view.x = e.offsetX - (e.offsetX - view.x) * k;
+  view.y = e.offsetY - (e.offsetY - view.y) * k;
+  view.scale *= k; draw();
+}, { passive: false });
+
+// ---- controls wiring ----
+document.getElementById("minWeight").addEventListener("input", e => {
+  document.getElementById("minWeightVal").textContent = e.target.value; draw();
+});
+document.getElementById("bookFilter").addEventListener("change", draw);
+document.getElementById("colorMode").addEventListener("change", draw);
+document.querySelectorAll("#typeFilters input").forEach(cb =>
+  cb.addEventListener("change", () => { typeState[cb.dataset.type] = cb.checked; draw(); }));
+document.getElementById("search").addEventListener("input", e => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { selected = null; showDetail(null); draw(); return; }
+  const hit = D.nodes.find(n => n.label.toLowerCase().includes(q));
+  if (hit) { selected = hit; showDetail(hit); draw(); }
+});
+
+document.getElementById("minWeightVal").textContent = document.getElementById("minWeight").value;
+window.addEventListener("resize", resize);
+resize();
+</script>
+</body>
+</html>
