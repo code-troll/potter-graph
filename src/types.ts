@@ -36,6 +36,7 @@ export interface Insight {
   title: string;
   body: string;
   headline?: boolean;    // the one surprise we want to lead with
+  focus?: string;        // node id the report should fly to when the card is clicked
 }
 
 export interface ExportData {

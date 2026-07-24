@@ -98,8 +98,17 @@ I hand-wrote pan/zoom/picking, which is more code than `<Sigma/>` but keeps the 
 file you can email.
 
 Interactions: pan/zoom, click-to-inspect (with neighbour highlighting), colour by type or by
-community, filter by entity type and by book, and a minimum-link-strength slider to peel the
-graph back to its strongest ties.
+community, filter by entity type, by book and by **type-pair**, and a minimum-link-strength
+slider to peel the graph back to its strongest ties.
+
+**Putting the insight *in* the graph.** A finding stated in a text card is easy to skim past, so
+the surprise is also made interactive. A **"Size nodes by"** toggle switches the radius metric from
+*mentions* to *betweenness* — flip it and the graph physically reshuffles, shrinking the stars and
+swelling the connectors, which is the "Harry is the star but not the hub" point rendered as motion
+rather than prose. **"Highlight bridges"** isolates the characters whose brokerage rank outruns
+their mention rank (the real go-betweens). And each insight card is a **link into the graph**:
+clicking it flies the view to, and pulses, the character the insight is about — so the words and
+the picture stay tied together.
 
 ## Things I'd do next with more time
 

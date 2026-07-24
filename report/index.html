@@ -63,6 +63,9 @@
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
   .card.headline { border-color: var(--gold); background: linear-gradient(180deg, #241f14, var(--panel)); }
+  .card[data-focus] { cursor: pointer; transition: border-color .15s, transform .15s; }
+  .card[data-focus]:hover { border-color: var(--gold); transform: translateY(-1px); }
+  .card[data-focus] h3::after { content: " ↳"; color: var(--muted); font-weight: 400; }
   .card h3 { margin: 0 0 5px; font-size: 14px; }
   .card.headline h3::before { content: "★ "; color: var(--gold); }
   .card p { margin: 0; font-size: 13px; color: var(--muted); }
@@ -107,6 +110,14 @@
       <option value="type">Entity type</option>
       <option value="community">Community (Louvain)</option>
     </select>
+
+    <h2>Size nodes by</h2>
+    <select id="sizeMode">
+      <option value="mentions">Mentions</option>
+      <option value="betweenness">Brokerage (betweenness)</option>
+    </select>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="bridgeMode">
+      <span class="dot" style="background:var(--gold)"></span>Highlight bridges</label>
 
     <h2>Show types</h2>
     <div id="typeFilters"></div>
@@ -178,7 +189,12 @@ document.getElementById("stats").innerHTML = statDefs
 
 // ---- insights ----
 document.getElementById("insights").innerHTML = D.insights.map(i =>
-  `<div class="card ${i.headline ? "headline" : ""}"><h3>${i.title}</h3><p>${i.body}</p></div>`).join("");
+  `<div class="card ${i.headline ? "headline" : ""}"${i.focus ? ` data-focus="${i.focus}"` : ""}>
+     <h3>${i.title}</h3><p>${i.body}</p></div>`).join("");
+document.getElementById("insights").addEventListener("click", e => {
+  const card = e.target.closest("[data-focus]");
+  if (card && nodeById.has(card.dataset.focus)) focusNode(nodeById.get(card.dataset.focus));
+});
 
 // ---- book filter options ----
 const bf = document.getElementById("bookFilter");
@@ -230,11 +246,27 @@ const ctx = canvas.getContext("2d");
 const tip = document.getElementById("tip");
 
 let view = { scale: 1, x: 0, y: 0 };   // world -> screen
+let baseScale = 1;                     // the fit-to-view scale, kept for "fly to node"
 let selected = null, hovered = null;
+let sizeMode = "mentions", bridgeMode = false;
 
 const xs = D.nodes.map(n => n.x), ys = D.nodes.map(n => n.y);
 const bounds = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-const sizeOf = n => 3 + Math.sqrt(n.mentions) * 0.7;   // area ~ mentions
+
+// Node radius is either "how often it's named" or "how much it brokers the network".
+// Switching to betweenness is the surprise made visual: stars shrink, connectors swell.
+const maxBetw = Math.max(...D.nodes.map(n => n.betweenness), 1e-9);
+const sizeOf = n => sizeMode === "betweenness"
+  ? 3 + Math.sqrt(n.betweenness / maxBetw) * 34
+  : 3 + Math.sqrt(n.mentions) * 0.7;
+
+// "Bridges": characters whose brokerage rank badly outruns their fame (mentions) rank.
+const _chars = D.nodes.filter(n => n.type === "character");
+const _bRank = new Map([..._chars].sort((a, b) => b.betweenness - a.betweenness).map((n, i) => [n.id, i + 1]));
+const _mRank = new Map([..._chars].sort((a, b) => b.mentions - a.mentions).map((n, i) => [n.id, i + 1]));
+const bridgeIds = new Set(_chars
+  .filter(n => _bRank.get(n.id) <= 15 && _mRank.get(n.id) - _bRank.get(n.id) >= 4)
+  .map(n => n.id));
 
 function resize() {
   const r = canvas.parentElement.getBoundingClientRect();
@@ -248,7 +280,7 @@ function fit() {
   const pad = 40;
   const sx = (w - pad * 2) / (bounds.maxX - bounds.minX || 1);
   const sy = (h - pad * 2) / (bounds.maxY - bounds.minY || 1);
-  view.scale = Math.min(sx, sy);
+  view.scale = baseScale = Math.min(sx, sy);
   view.x = pad - bounds.minX * view.scale + (w - pad * 2 - (bounds.maxX - bounds.minX) * view.scale) / 2;
   view.y = pad - bounds.minY * view.scale + (h - pad * 2 - (bounds.maxY - bounds.minY) * view.scale) / 2;
   draw();
@@ -314,12 +346,19 @@ function draw() {
   for (const n of D.nodes) {
     if (!vis.nodeIds.has(n.id)) continue;
     const p = toScreen(n), r = sizeOf(n);
-    const dim = selected && selected !== n && !areNeighbours(selected, n);
-    ctx.globalAlpha = dim ? 0.25 : 1;
+    const isBridge = bridgeMode && bridgeIds.has(n.id);
+    const dim = n !== selected &&
+      ((selected && !areNeighbours(selected, n)) || (bridgeMode && !isBridge));
+    ctx.globalAlpha = dim ? 0.15 : 1;
+    if (isBridge) {                                   // gold halo behind the brokers
+      ctx.beginPath(); ctx.arc(p.x, p.y, r + 5, 0, 7);
+      ctx.fillStyle = "rgba(242,193,78,.25)"; ctx.fill();
+    }
     ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
     ctx.fillStyle = colorFor(n, f); ctx.fill();
+    if (isBridge) { ctx.lineWidth = 2; ctx.strokeStyle = "#f2c14e"; ctx.stroke(); }
     if (n === selected || n === hovered) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
-    if (r > 9 || n === selected || labelAll) {
+    if (r > 9 || n === selected || labelAll || isBridge) {
       ctx.globalAlpha = dim ? 0.3 : 1;
       ctx.fillStyle = "#e9e9f4"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
       ctx.fillText(n.label, p.x, p.y - r - 3);
@@ -431,12 +470,46 @@ canvas.addEventListener("wheel", e => {
 }, { passive: false });
 
 // ---- controls wiring ----
+// Fly to a node (used by the clickable insight cards): make sure it's visible,
+// centre and zoom on it, then pulse a ring so the eye lands on it.
+function focusNode(n) {
+  typeState[n.type] = true;
+  const cb = document.querySelector(`#typeFilters input[data-type="${n.type}"]`);
+  if (cb) cb.checked = true;
+  document.getElementById("pairFilter").value = "all";
+  bridgeMode = false; document.getElementById("bridgeMode").checked = false;
+  selected = n; showDetail(n);
+  const w = canvas.width / devicePixelRatio, h = canvas.height / devicePixelRatio;
+  view.scale = baseScale * 2.4;
+  view.x = w / 2 - n.x * view.scale;
+  view.y = h / 2 - n.y * view.scale;
+  draw();
+  canvas.scrollIntoView({ behavior: "smooth", block: "center" });
+  pulse(n);
+}
+let pulseN = null, pulseT0 = 0;
+function pulse(n) { pulseN = n; pulseT0 = performance.now(); requestAnimationFrame(pulseStep); }
+function pulseStep(t) {
+  if (!pulseN) return;
+  const k = (t - pulseT0) / 1400;
+  draw();
+  if (k < 1) {
+    const p = toScreen(pulseN);
+    ctx.globalAlpha = 1 - k; ctx.strokeStyle = "#f2c14e"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, sizeOf(pulseN) + 6 + k * 45, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(pulseStep);
+  } else { pulseN = null; }
+}
+
 document.getElementById("minWeight").addEventListener("input", e => {
   document.getElementById("minWeightVal").textContent = e.target.value; draw();
 });
 document.getElementById("bookFilter").addEventListener("change", draw);
 document.getElementById("colorMode").addEventListener("change", draw);
 document.getElementById("pairFilter").addEventListener("change", draw);
+document.getElementById("sizeMode").addEventListener("change", e => { sizeMode = e.target.value; draw(); });
+document.getElementById("bridgeMode").addEventListener("change", e => { bridgeMode = e.target.checked; draw(); });
 document.querySelectorAll("#typeFilters input").forEach(cb =>
   cb.addEventListener("change", () => { typeState[cb.dataset.type] = cb.checked; draw(); }));
 document.getElementById("search").addEventListener("input", e => {

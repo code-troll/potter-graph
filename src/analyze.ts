@@ -39,24 +39,35 @@ const rank = (arr: Entity[], key: (e: Entity) => number) =>
 function buildInsights(chars: Entity[], nodes: Entity[], corpus: Corpus): Insight[] {
   const insights: Insight[] = [];
 
-  // --- headline: the bridge that punches above its screen time ---
+  // --- headline: the star isn't the hub ---
   const byMentions = rank(chars, (e) => e.mentions);
   const byBetween = rank(chars, (e) => e.betweenness);
   const mentionRank = new Map(byMentions.map((e, i) => [e.id, i + 1]));
-  // a "connector" sits high on betweenness but comparatively low on raw mentions
+  const betweenRank = new Map(byBetween.map((e, i) => [e.id, i + 1]));
+
+  const star = byMentions[0]; // most-mentioned
+  const hub = byBetween[0];   // biggest connector
+  const hub2 = byBetween[1];
+  // the sneaky bridge: a top-6 broker whose fame (mentions) trails furthest behind
   const bridge = byBetween
     .slice(0, 6)
-    .map((e) => ({ e, gap: (mentionRank.get(e.id) ?? 999) - (byBetween.indexOf(e) + 1) }))
+    .map((e) => ({ e, gap: (mentionRank.get(e.id) ?? 999) - (betweenRank.get(e.id) ?? 999) }))
     .sort((a, b) => b.gap - a.gap)[0];
-  if (bridge && bridge.gap > 0) {
+
+  if (star && hub && star.id !== hub.id) {
     insights.push({
       headline: true,
-      title: `${bridge.e.label} is a social bridge, not a headliner`,
+      focus: hub.id,
+      title: `${star.label} is the most-named character — but not the biggest connector`,
       body:
-        `${bridge.e.label} ranks #${byBetween.indexOf(bridge.e) + 1} in betweenness centrality ` +
-        `(how often the shortest path between two characters runs through them) but only ` +
-        `#${mentionRank.get(bridge.e.id)} by raw mentions. They connect clusters that would ` +
-        `otherwise barely touch - a plot-glue role the mention count alone hides.`,
+        `By betweenness centrality — how often the shortest path between two characters runs ` +
+        `through you — ${hub.label} and ${hub2.label} both broker more of the network than ` +
+        `${star.label}, who is #1 by mentions yet only #${betweenRank.get(star.id)} as a connector. ` +
+        (bridge && bridge.gap > 2
+          ? `And ${bridge.e.label}, only #${mentionRank.get(bridge.e.id)} by mentions, breaks into the ` +
+            `top ${betweenRank.get(bridge.e.id)} brokers. `
+          : '') +
+        `Flip "Size nodes by → Brokerage" to watch the stars and hubs swap places.`,
     });
   }
 
@@ -65,6 +76,7 @@ function buildInsights(chars: Entity[], nodes: Entity[], corpus: Corpus): Insigh
   if (talkers.length) {
     const loud = talkers[0];
     insights.push({
+      focus: loud.id,
       title: `${loud.label} talks the most per appearance`,
       body:
         `Measured as words spoken per mention, ${loud.label} is the densest talker among ` +
@@ -81,6 +93,7 @@ function buildInsights(chars: Entity[], nodes: Entity[], corpus: Corpus): Insigh
   }
   const biggest = [...groups.values()].sort((a, b) => b.length - a.length).slice(0, 3);
   insights.push({
+    focus: rank(biggest[0], (e) => e.mentions)[0]?.id,
     title: `The graph self-organises into ${groups.size} communities`,
     body:
       `Louvain community detection (run only on co-occurrence, with no knowledge of the ` +
@@ -100,6 +113,7 @@ function buildInsights(chars: Entity[], nodes: Entity[], corpus: Corpus): Insigh
   if (topCaster && spellNode) {
     const casterName = chars.find((c) => c.id === topCaster[0])?.label ?? topCaster[0];
     insights.push({
+      focus: spellNode.id,
       title: `${spellNode.label} is the most-named spell`,
       body:
         `Across the four books ${spellNode.label} leads the incantation count, and ` +

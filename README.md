@@ -185,9 +185,11 @@ story for no real gain, and it keeps the whole report a single file you can emai
 
 **What can I actually do in it?**
 Pan and zoom; click a node to inspect it (with neighbour highlighting); colour by entity type or
-by community; show/hide types; filter to a single book; drag a minimum-link-strength slider to
-peel the graph back to its strongest ties; restrict to a **type-pair** (e.g. only creature↔place
-links); and search by name.
+by community; **size nodes by mentions or by brokerage (betweenness)** — the toggle that makes the
+headline insight visible; **highlight the "bridge" characters** (high brokerage, modest fame);
+show/hide types; filter to a single book; drag a minimum-link-strength slider to peel the graph
+back to its strongest ties; restrict to a **type-pair** (e.g. only creature↔place links); search
+by name; and **click any insight card to fly the graph to the character it's about**.
 
 **Does it work offline / by just double-clicking `index.html`?**
 Yes. `data.js` loads via a plain `<script>` tag — no `fetch`, no CDN, no server required.
@@ -199,9 +201,12 @@ filled in from the data, not hard-coded prose. Change the corpus and the insight
 ### Engineering & extending
 
 **What's the surprising insight, and why is it surprising?**
-The report leads with it: the character ranking high on *betweenness* — a bridge between
-otherwise-separate clusters — sits well **below** that on raw mentions. It's a structural role
-the intuitive "who's mentioned most" view misses entirely.
+The report leads with it: **Harry is the most-named character but not the biggest connector.** By
+betweenness centrality, *Hermione* (0.083) and *Ron* (0.079) both broker more of the network than
+Harry (0.044, #4), and *Mad-Eye Moody* — only 11th in mentions — cracks the top-6 brokers. You can
+*see* it: flip **"Size nodes by → Brokerage"** and the stars shrink while the connectors swell, or
+hit **"Highlight bridges"** to isolate the brokers (Moody, Krum, Cedric, Bagman) whose structural
+role far outruns their fame. It's the role the intuitive "who's mentioned most" view misses entirely.
 
 **How long does it take to run?**
 A second or two once the ~2.6 MB of text is cached; the first run also spends a moment
