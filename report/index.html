@@ -111,6 +111,9 @@
     <h2>Show types</h2>
     <div id="typeFilters"></div>
 
+    <h2>Link pairs</h2>
+    <select id="pairFilter"><option value="all">All type-pairs</option></select>
+
     <h2>Book</h2>
     <select id="bookFilter">
       <option value="0">All four books</option>
@@ -159,6 +162,7 @@ const TYPE_COLOR = {
   character: "#f2c14e", spell: "#6fb7ff", place: "#63e6a4", creature: "#ff8fab", house: "#c39bff",
 };
 const nodeById = new Map(D.nodes.map(n => [n.id, n]));
+const pairKeyOf = (a, b) => [a.type, b.type].sort().join("|");
 
 // ---- header stats ----
 const pct = (D.meta.quotesAttributed / D.meta.quotesSeen * 100).toFixed(0);
@@ -186,6 +190,19 @@ const typeState = Object.fromEntries(TYPES.map(t => [t, true]));
 document.getElementById("typeFilters").innerHTML = TYPES.map(t =>
   `<label class="check"><input type="checkbox" data-type="${t}" checked>
      <span class="dot" style="background:${TYPE_COLOR[t]}"></span>${t}s</label>`).join("");
+
+// ---- link type-pair options (built from what's actually in the graph) ----
+const pairCounts = {};
+for (const l of D.links) {
+  if (l.type !== "cooccurs") continue;
+  const k = pairKeyOf(nodeById.get(l.source), nodeById.get(l.target));
+  pairCounts[k] = (pairCounts[k] || 0) + 1;
+}
+Object.entries(pairCounts).sort((a, b) => b[1] - a[1]).forEach(([k, c]) => {
+  const [t1, t2] = k.split("|");
+  document.getElementById("pairFilter").insertAdjacentHTML("beforeend",
+    `<option value="${k}">${t1} ↔ ${t2} (${c})</option>`);
+});
 
 // ---- charts ----
 function drawChart(elId, rows, color) {
@@ -242,10 +259,35 @@ function filters() {
   const book = +document.getElementById("bookFilter").value;
   const minW = +document.getElementById("minWeight").value;
   const colorMode = document.getElementById("colorMode").value;
-  return { book, minW, colorMode };
+  const pair = document.getElementById("pairFilter").value;
+  return { book, minW, colorMode, pair };
 }
 const nodeVisible = (n, f) =>
   typeState[n.type] && (f.book === 0 || n.books.includes(f.book));
+
+// What's currently on screen. When a specific type-pair is chosen we keep only its
+// edges and the nodes they touch, so the graph collapses to just that relationship.
+let vis = { edges: [], nodeIds: new Set() };
+function computeVisible(f) {
+  const edges = [];
+  const minW = f.pair === "all" ? f.minW : 1; // show every edge of a chosen pair
+  for (const l of D.links) {
+    if (l.type !== "cooccurs" || l.weight < minW) continue;
+    if (f.book !== 0 && !l.books.includes(f.book)) continue;
+    const a = nodeById.get(l.source), b = nodeById.get(l.target);
+    if (!nodeVisible(a, f) || !nodeVisible(b, f)) continue;
+    if (f.pair !== "all" && pairKeyOf(a, b) !== f.pair) continue;
+    edges.push(l);
+  }
+  let nodeIds;
+  if (f.pair === "all") {
+    nodeIds = new Set(D.nodes.filter(n => nodeVisible(n, f)).map(n => n.id));
+  } else {
+    nodeIds = new Set(edges.flatMap(l => [l.source, l.target]));
+    if (selected) nodeIds.add(selected.id); // keep an inspected node pinned
+  }
+  return { edges, nodeIds };
+}
 
 function colorFor(n, f) {
   return f.colorMode === "community" ? commColor(n.community) : TYPE_COLOR[n.type];
@@ -253,16 +295,14 @@ function colorFor(n, f) {
 
 function draw() {
   const f = filters();
+  vis = computeVisible(f);
   const w = canvas.width / devicePixelRatio, h = canvas.height / devicePixelRatio;
   ctx.clearRect(0, 0, w, h);
 
   // edges (co-occurrence only; casts live in the detail panel)
   ctx.lineWidth = 1;
-  for (const l of D.links) {
-    if (l.type !== "cooccurs" || l.weight < f.minW) continue;
-    if (f.book !== 0 && !l.books.includes(f.book)) continue;
+  for (const l of vis.edges) {
     const a = nodeById.get(l.source), b = nodeById.get(l.target);
-    if (!nodeVisible(a, f) || !nodeVisible(b, f)) continue;
     const hot = selected && (l.source === selected.id || l.target === selected.id);
     const pa = toScreen(a), pb = toScreen(b);
     ctx.strokeStyle = hot ? "rgba(242,193,78,.55)" : `rgba(150,150,190,${Math.min(0.06 + l.weight / 400, 0.3)})`;
@@ -270,15 +310,16 @@ function draw() {
   }
 
   // nodes
+  const labelAll = f.pair !== "all"; // pair view is sparse, so name everything
   for (const n of D.nodes) {
-    if (!nodeVisible(n, f)) continue;
+    if (!vis.nodeIds.has(n.id)) continue;
     const p = toScreen(n), r = sizeOf(n);
     const dim = selected && selected !== n && !areNeighbours(selected, n);
     ctx.globalAlpha = dim ? 0.25 : 1;
     ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
     ctx.fillStyle = colorFor(n, f); ctx.fill();
     if (n === selected || n === hovered) { ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
-    if (r > 9 || n === selected) {
+    if (r > 9 || n === selected || labelAll) {
       ctx.globalAlpha = dim ? 0.3 : 1;
       ctx.fillStyle = "#e9e9f4"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
       ctx.fillText(n.label, p.x, p.y - r - 3);
@@ -303,10 +344,9 @@ const areNeighbours = (a, b) => neighboursOf(a).has(b.id);
 
 // ---- picking ----
 function nodeAt(mx, my) {
-  const f = filters();
   let best = null, bestD = 14;
   for (const n of D.nodes) {
-    if (!nodeVisible(n, f)) continue;
+    if (!vis.nodeIds.has(n.id)) continue;
     const p = toScreen(n), d = Math.hypot(p.x - mx, p.y - my);
     if (d < Math.max(sizeOf(n), 6) && d < bestD) { best = n; bestD = d; }
   }
@@ -396,6 +436,7 @@ document.getElementById("minWeight").addEventListener("input", e => {
 });
 document.getElementById("bookFilter").addEventListener("change", draw);
 document.getElementById("colorMode").addEventListener("change", draw);
+document.getElementById("pairFilter").addEventListener("change", draw);
 document.querySelectorAll("#typeFilters input").forEach(cb =>
   cb.addEventListener("change", () => { typeState[cb.dataset.type] = cb.checked; draw(); }));
 document.getElementById("search").addEventListener("input", e => {
