@@ -1,0 +1,8 @@
+node_modules/
+
+# Raw book texts are fetched on demand and not redistributed here.
+data/*.txt
+
+# Editor noise
+.idea/
+.DS_Store

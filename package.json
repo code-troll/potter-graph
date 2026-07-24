@@ -1,0 +1,22 @@
+{
+  "name": "potter-graph",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Entity/relation graph mined from the first four Harry Potter books",
+  "type": "module",
+  "scripts": {
+    "build": "tsx src/build.ts",
+    "report": "npx --yes serve report"
+  },
+  "dependencies": {
+    "graphology": "^0.25.4",
+    "graphology-communities-louvain": "^2.0.1",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-metrics": "^2.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
