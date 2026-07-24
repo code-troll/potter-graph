@@ -48,7 +48,13 @@ step for the browser. Double-clicking `index.html` is enough.
 
 ## Demo
 
-![Demo](assets/demo.gif)
+A ~20-second walkthrough: clicking the headline insight to fly the graph to Hermione, sizing
+nodes by brokerage (watch the stars shrink and the connectors swell), isolating the bridge
+characters, and community colouring.
+
+▶ **[Watch the walkthrough (MP4)](assets/demo.mp4)** · preview below:
+
+![Demo walkthrough](assets/demo.gif)
 
 ## How it flows
 
